@@ -1,0 +1,54 @@
+#connection details
+unispherehost: ""
+universion: "92"
+verifycert: False
+user: ""
+password: ""
+serial_no: ""
+
+number_of_ports_required: 2
+
+
+brocade_credential:
+  fos_ip_addr: ""
+  fos_user_name: ""
+  fos_password: ""
+  https: False
+vfid: ""
+# Optionally add to playbook instead for sensitive data or use vault.
+#  vars_prompt:
+#
+#    - name: user
+#      prompt: What is your powermax username?
+#      private: no
+#
+#    - name: password
+#      prompt: What is your powermax password?
+
+host_name: "Brocade_Test_host"
+initiators:
+  - 21fd1037f8c83fa4
+  - 21fd0127f8c83fa7
+
+sg_name: "WLP_Role"
+srp: "SRP_1"
+mv_name: "{{ sg_name + 'MV' }}"
+portgroup_name: "WLP_Role"
+service_level: "Diamond"
+
+#List of volumes to be created
+volume_list:
+  - vol_name: "WLP_1"
+    size: 1
+    cap_unit: "GB"
+  - vol_name: "WLP_2"
+    size: 1
+    cap_unit: "GB"
+
+#
+# Port Group created Automatically with ports from utilization checks
+#ports:
+#  - director_id: "FA-1D"
+#    port_id: "4"
+#  - director_id: "FA-2D"
+#    port_id: "4"

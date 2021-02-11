@@ -1,0 +1,184 @@
+---
+- name: Setting connection variables
+  set_fact:
+    input: &connection_vars
+      unispherehost: "{{ unispherehost }}"
+      universion: "{{ universion }}"
+      verifycert: "{{ verifycert }}"
+      user: "{{ user }}"
+      password: "{{ password }}"
+      serial_no: "{{ serial_no }}"
+  no_log: True
+
+# TODO - Add check that array is registered for performance and array is
+#  local to Unipshere
+
+# Create new storage group
+- name: Get least Utilized Ports
+  uri:
+    url: "https://{{ unispherehost }}:8443/univmax/restapi/{{ universion
+    }}/wlp/symmetrix/{{ serial_no }}/admissibility"
+    validate_certs: false
+    user: "{{ user }}"
+    password: "{{ password }}"
+    timeout: 200
+    headers:
+      Content-Type: "application/json"
+    method: POST
+    body_format: json
+    body: { "numberOfPorts": "{{ number_of_ports_required }}"}
+    status_code:
+      - 200
+  register: wlp_ports
+  failed_when: wlp_ports.json.errors is defined
+  # If port selection fails for any reason role will not run past this point
+  # run with -vvv to get debug errors should be clear, usually not enough
+  # online ports to satisfy request.
+
+# Save Front-end Port Suggestion from Workload Planner to FACT
+- name: Save Port Details to fact
+  set_fact:
+    wlp_port_config_suggestion: "{{ wlp_ports.json.configuration.frontEndPort | list }}"
+
+###############################################################################
+# Brocade Zoning Tasks                                                        #
+###############################################################################
+
+
+- name: Create PowerMax Port aliases on Switch
+  brocade.fos.brocade_zoning_alias:
+    credential: "{{ brocade_credential }}"
+    vfid: "{{ vfid }}"
+    aliases:
+      - name: "PMAX_{{serial_no[9:12]}}_{{item.symmetrixPortKey
+                  .directorId[0:2]}}_{{item
+                  .symmetrixPortKey
+                  .directorId[3:5]}}_P{{item.symmetrixPortKey.portId}}"
+        members:
+          - "{{item.identifier[0:2]}}:{{item.identifier[2:4]}}:{{item.identifier[4:6]}}:{{item.identifier[6:8]}}:{{item.identifier[8:10]}}:{{item.identifier[10:12]}}:{{item.identifier[12:14]}}:{{item.identifier[14:16]}}"
+  with_items: "{{ wlp_port_config_suggestion }}"
+
+- name: Create Host Aliases on Switch
+  brocade.fos.brocade_zoning_alias:
+    credential: "{{ brocade_credential }}"
+    vfid: "{{ vfid }}"
+    aliases:
+      - name: "{{ host_name }}_{{item[12:16]}}"
+        members:
+          - "{{item[0:2]}}:{{item[2:4]}}:{{item[4:6]}}:{{item[6:8]}}:{{item[8:10]}}:{{item[10:12]}}:{{item[12:14]}}:{{item[14:16]}}"
+  with_items: "{{ initiators }}"
+
+### All above is working ###
+- name: Initialize Storage Port Alias list
+  set_fact:
+    array_port_alias_list: []
+
+- name: Add Array Port Alias to list
+  set_fact:
+    array_port_alias_list: "{{ array_port_alias_list }} +
+    ['PMAX_{{serial_no[9:12]}}_{{item.symmetrixPortKey
+                             .directorId[0:2]}}_{{item
+                             .symmetrixPortKey
+                             .directorId[3:5]}}_P{{item.symmetrixPortKey.portId}}']"
+  with_items: "{{ wlp_port_config_suggestion }}"
+
+- name: Initialize Zone list
+  set_fact:
+    zone_list: []
+
+- name: Add Zone names to list
+  set_fact:
+    zone_list: "{{ zone_list }} +
+    ['{{host_name}}{{item[12:16]}}_to_PMAX_{{serial_no[9:12]}}']"
+  with_items: "{{ initiators }}"
+
+# Create Zones
+- name: Create Zones and add Host initiators
+  brocade.fos.brocade_zoning_zone:
+    credential: "{{brocade_credential}}"
+    vfid: "{{ vfid }}"
+    zones:
+      - name: "{{host_name}}{{item[12:16]}}_to_PMAX_{{serial_no[9:12]}}"
+        members:
+          - "{{ host_name }}_{{item[12:16]}}"
+    members_add_only: True
+  with_items: "{{ initiators }}"
+
+# Add storage ports to Zones
+- name: Add Storage Ports to Zones
+  brocade.fos.brocade_zoning_zone:
+    credential: "{{brocade_credential}}"
+    vfid: "{{ vfid }}"
+    zones:
+      - name: "{{host_name}}{{item[12:16]}}_to_PMAX_{{serial_no[9:12]}}"
+        members: "{{ array_port_alias_list }}"
+    members_add_only: True
+  with_items: "{{ initiators }}"
+
+- name: Add Zones to config and Enable
+  brocade.fos.brocade_zoning_cfg:
+    credential: "{{ brocade_credential }}"
+    vfid: "{{ vfid }}"
+    cfgs:
+      - name: "{{ zone_cfg }}"
+        members: "{{ zone_list }}"
+    members_add_only: True
+  register: zone_config
+
+###############################################################################
+# PowerMax Provisioning Tasks     -- Commented out you can uncomment or use   #
+# PowerMax roles    These tasks serve for examples on how to use the outputs  #
+###############################################################################
+
+# Create port group
+- name: Create port group
+  dellemc.powermax.dellemc_powermax_portgroup:
+    <<: *connection_vars
+    portgroup_name: "{{ portgroup_name }}"
+    state: "present"
+    ports:
+      - director_id: "{{ item.symmetrixPortKey.directorId }}"
+        port_id: "{{item.symmetrixPortKey.portId }}"
+    port_state: 'present-in-group'
+  with_items: "{{ wlp_port_config_suggestion }}"
+
+# This task will create a host with given host_name and initiators
+- name: Create host
+  dellemc.powermax.dellemc_powermax_host:
+    <<: *connection_vars
+    host_name: "{{ host_name }}"
+    initiators: "{{ initiators }}"
+    state: 'present'
+    initiator_state: 'present-in-host'
+
+# Create empty storage group
+- name: Create empty storage group
+  dellemc.powermax.dellemc_powermax_storagegroup:
+    <<: *connection_vars
+    sg_name: "{{ sg_name }}"
+    service_level:  "{{ service_level }}"
+    srp: "{{ srp }}"
+    compression: True
+    state: "present"
+
+# Loop to Create volumes in storage group from volume_list input list"
+- name: Create volumes
+  register: result
+  dellemc.powermax.dellemc_powermax_volume:
+    <<: *connection_vars
+    sg_name: "{{ sg_name }}"
+    vol_name: "{{ item.vol_name}}"
+    size: "{{ item.size }}"
+    cap_unit: "{{ item.cap_unit }}"
+    state: "present"
+  with_items: "{{ volume_list }}"
+
+# This task creates a masking view with given mv_name, portgroup_name, host_name, sg_name. **previous tasks
+- name: Create MV with host
+  dellemc.powermax.dellemc_powermax_maskingview:
+    <<: *connection_vars
+    mv_name: "{{ mv_name }}"
+    portgroup_name: "{{ portgroup_name }}"
+    host_name: "{{ host_name }}"
+    sg_name: "{{ sg_name }}"
+    state: "present"
