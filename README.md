@@ -25,8 +25,8 @@ Python module PyFOS
 Role Variables
 --------------
 
-All required variables are defined in defaults/main.yml copy fill in the 
-values as below to meet your environment or pass in by any means.
+All required variables are defined in defaults/main.yml copy to your variable file and 
+fill in the values as below to meet your environment or pass in values listed by any means supported by anisble.
 
 Unisphere connection Variables for PowerMax Management e.g.
 
