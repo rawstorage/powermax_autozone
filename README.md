@@ -9,6 +9,10 @@ customized by modifying tasks/main.yml.
 All content (e.g. words, scripts) provided on this GitHub is for informational 
 purposes only. I make no representations as to the accuracy or completeness of any information on this site or found by following any link on this site. I will not be liable for any errors or omissions in this information nor for the availability of this information. I will not be liable for any losses, injuries, or damages from the display or use of this information. The opinions expressed here are my personal opinions. Content published here is not read or approved in advance by Dell EMC and does not necessarily reflect the views and opinions of Dell EMC; nor does it constitute any official communication of Dell EMC. Always check official documentation hosted by either company for support or verified technical information.
 
+Important
+----------
+PowerMax Autozone Role uses  performance metrics for port selection from the workload planner on Unipshere.  This role therefore is for initial deployment only, due to load changes over time on ports due to added workloads the port picking algorithm may suggest different front end ports for the provisioning on a subsequent run due to changes in workload and utilization over time.  This Role is for demonstration purposes only and can not be used in idempotent way for port selection. Role can be modified to ensure that if masking view already exists the zoning and port selection can be skipped.  
+
 Requirements
 ------------
 
